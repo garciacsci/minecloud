@@ -1,13 +1,28 @@
 cd /opt/minecloud
 echo "Server started: $(date)"
 
-TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
-MY_IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4/)
+# IMDSv2 token acquisition
+TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 
-INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id/)
-AZ=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone/)
+# Using tokens to obtain metadata
+MY_IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
+    http://169.254.169.254/latest/meta-data/public-ipv4/)
+INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
+    http://169.254.169.254/latest/meta-data/instance-id/)
+AZ=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
+    http://169.254.169.254/latest/meta-data/placement/availability-zone/)
 
-DOMAIN_NAME=$(aws ec2 describe-tags --region ${AZ::-1} --filters "Name=resource-id,Values=${INSTANCE_ID}" --query 'Tags[?Key==`DOMAIN_NAME`].Value' --output text)
+if [ -z "$AZ" ]; then
+    echo "Error: Availability Zone is empty. Exiting."
+    ./send_discord_message_to_webhook.sh "Error: Availability Zone is empty. Exiting."
+    exit 1
+fi
+REGION=${AZ::-1}
+
+DOMAIN_NAME=$(aws ec2 describe-tags --region $REGION \
+--filters "Name=resource-id,Values=${INSTANCE_ID}" \
+--query 'Tags[?Key==`DOMAIN_NAME`].Value' --output text)
 if [ ! -z "$DOMAIN_NAME" ]
 then
     DNS_NAME="minecloud.$DOMAIN_NAME"
@@ -16,7 +31,7 @@ then
     ZONE_ID=${ZONE##*/}
 
     aws route53 change-resource-record-sets --hosted-zone-id $ZONE_ID --change-batch '{"Changes":[{"Action":"UPSERT","ResourceRecordSet":{"Name":"'$DNS_NAME'","Type":"A","TTL":60,"ResourceRecords":[{"Value":"'$MY_IP'"}]}}]}'
-    echo "hostname (ip): $DNAME_NAME ($MY_IP)"
+    echo "hostname (ip): $DNS_NAME ($MY_IP)"
     ./send_discord_message_to_webhook.sh "The server instance is ready >w< !  Here's the hostname/IP address:\n$DNS_NAME ($MY_IP)"
     echo "Discord hostname & public IP sent"
 else
