@@ -20,6 +20,7 @@ import {
   BlockDeviceVolume,
   CfnKeyPair,
   InstanceType,
+  KeyPair,
   Peer,
   Port,
   SecurityGroup,
@@ -73,9 +74,10 @@ export class MineCloud extends Stack {
     super(scope, id, props);
 
     // setup backup S3 bucket
-    const backUpBucketName = `mc-backup-${v4()}`;
+    const backUpBucketName = `${STACK_PREFIX.toLowerCase()}-backups-${v4()}`;
     this.backupBucket = new Bucket(this, `${STACK_PREFIX}_backup_s3_bucket`, {
-      bucketName: backUpBucketName
+      // Bucket name must be at least 3 and no more than 63 characters
+      bucketName: backUpBucketName.substring(0,62)
     });
 
     // setup EC2 instance
@@ -159,7 +161,7 @@ export class MineCloud extends Stack {
 
     const spotInstance = new SpotInstance(this, `${STACK_PREFIX}_ec2_instance`, {
       vpc: defaultVPC,
-      keyName: sshKeyPair.keyName,
+      keyPair: KeyPair.fromKeyPairName(this, 'Ec2KeyPair', sshKeyPair.keyName),
       role: ec2Role,
       // vpcSubnets: {
       //   // Place in a public subnet in-order to have a public ip address
@@ -255,7 +257,7 @@ export class MineCloud extends Stack {
       this,
       `${STACK_PREFIX}_discord_commands_register_lambda`,
       {
-        runtime: Runtime.NODEJS_18_X,
+        runtime: Runtime.NODEJS_22_X,
         handler: 'index.handler',
         entry: path.join(
           __dirname,
