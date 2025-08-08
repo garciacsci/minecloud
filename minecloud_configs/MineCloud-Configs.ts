@@ -1,5 +1,5 @@
 // ------------- CloudFormation ------------- //
-export const STACK_NAME = 'MinecraftExample';
+export const STACK_NAME = 'MineCloud';
 
 export const DISCORD_COMMAND_PREFIX = 'mc';
 
