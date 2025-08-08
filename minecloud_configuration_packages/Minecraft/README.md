@@ -31,6 +31,7 @@ There are some websites that collect the download links of older versions of Min
 ```bash
 curl -OJ https://meta.fabricmc.net/v2/versions/loader/<Minecraft Version>/<Fabric Loader Version>/<Installer Version>/server/jar
 ```
+`curl -OJ https://meta.fabricmc.net/v2/versions/loader/1.18.2/0.14.21/1.1.0/server/jar`
 
 - Connect to the server instance using the [browser based terminal](../../README.md##accessing-the-server-terminal) or SSH clients, learn more at [How to connect to the server instance using SSH clients](../../README.md#managing-server-files)
 - Paste the curl command in the terminal and press enter.
