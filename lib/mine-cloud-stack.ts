@@ -17,6 +17,7 @@ import {
 import {
   AmazonLinuxGeneration,
   AmazonLinuxImage,
+  AmazonLinuxCpuType,
   BlockDeviceVolume,
   CfnKeyPair,
   InstanceType,
@@ -170,7 +171,8 @@ export class MineCloud extends Stack {
       securityGroup: securityGroup,
       instanceType: new InstanceType(EC2_INSTANCE_TYPE),
       machineImage: new AmazonLinuxImage({
-        generation: AmazonLinuxGeneration.AMAZON_LINUX_2023
+        generation: AmazonLinuxGeneration.AMAZON_LINUX_2023,
+        cpuType: AmazonLinuxCpuType.ARM_64
       }),
       templateId: `${STACK_PREFIX}_ec2_launch_template`,
       launchTemplateSpotOptions: {
