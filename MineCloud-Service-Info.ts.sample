@@ -2,6 +2,12 @@
 export const AWS_ACCOUNT_ID = '';
 export const AWS_REGION = '';
 
+// SSH Access
+export const SSH_AUTHORIZED_KEYS = [
+  'ssh-rsa YOUR_PUBLIC_KEY_HERE_WITHOUT_NEWLINES user@example.com'
+  // Add more keys as needed, one per line
+];
+
 // Discord
 export const DISCORD_APP_ID = '';
 export const DISCORD_PUBLIC_KEY = '';

@@ -12,19 +12,24 @@ import {
   DEPLOY_LOCAL_SERVER_EXECUTABLE,
   MAX_BACKUP_COUNT
 } from '../minecloud_configs/MineCloud-Configs';
-import { DISCORD_CHANNEL_WEB_HOOK } from '../MineCloud-Service-Info';
+import {
+  DISCORD_CHANNEL_WEB_HOOK,
+  SSH_AUTHORIZED_KEYS
+} from '../MineCloud-Service-Info';
 
 import { CUSTOM_INIT_CONFIG } from '../minecloud_configs/advanced_configs/custom-instance-init';
 import {
   MINECLOUD_BASE_DIR,
   MINECLOUD_SERVER_DIR
 } from './const/minecloud-dir';
-import { setUpEnviromentVariable, setUpShellScript } from '../shared_lib/minecloud-utilities';
+import {
+  setUpEnviromentVariable,
+  setUpShellScript
+} from '../shared_lib/minecloud-utilities';
 
 const MINECLOUD_USER = 'minecloud';
 // Not the same name since cfn-init can't figure it out for some reason
 const MINECLOUD_GROUP = 'minecloud-group';
-
 
 export function getInitConfig(backupBucketName: string) {
   return CloudFormationInit.fromConfigSets({
@@ -64,6 +69,25 @@ export function getInitConfig(backupBucketName: string) {
 
         // Setup directories
         InitCommand.shellCommand(`mkdir -p ${MINECLOUD_SERVER_DIR}`),
+
+        // Add additional SSH keys to authorized_keys for ec2-user
+        InitCommand.shellCommand(`mkdir -p /home/ec2-user/.ssh`),
+        InitFile.fromString(
+          '/home/ec2-user/.ssh/authorized_keys.append',
+          SSH_AUTHORIZED_KEYS.join('\n')
+        ),
+        InitCommand.shellCommand(
+          'cat /home/ec2-user/.ssh/authorized_keys.append >> /home/ec2-user/.ssh/authorized_keys'
+        ),
+        InitCommand.shellCommand(
+          'rm /home/ec2-user/.ssh/authorized_keys.append'
+        ),
+        InitCommand.shellCommand(
+          'chmod 600 /home/ec2-user/.ssh/authorized_keys'
+        ),
+        InitCommand.shellCommand(
+          'chown ec2-user:ec2-user /home/ec2-user/.ssh/authorized_keys'
+        ),
 
         // Setup server start/stop scripts
         ...setUpShellScript(
@@ -154,15 +178,9 @@ export function getInitConfig(backupBucketName: string) {
 
         // Setup crontab scheduler, run every 30 min.
         // Install cronie first as it's not come with Amazon Linux 2023
-        InitCommand.shellCommand(
-          `sudo yum install cronie -y`
-        ),
-        InitCommand.shellCommand(
-          `sudo systemctl enable crond.service`
-        ),
-        InitCommand.shellCommand(
-          `sudo systemctl start crond.service`
-        ),
+        InitCommand.shellCommand(`sudo yum install cronie -y`),
+        InitCommand.shellCommand(`sudo systemctl enable crond.service`),
+        InitCommand.shellCommand(`sudo systemctl start crond.service`),
         InitCommand.shellCommand(
           `(crontab -l 2>/dev/null; echo "*/30 * * * * ${MINECLOUD_BASE_DIR}/check_user_conn.sh") | crontab -`
         )
