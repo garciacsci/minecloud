@@ -139,13 +139,32 @@ function getAWSErrorMessageTemplate(
   actionText: string,
   errorMessage: any
 ): string {
+  // Sanitize error message to avoid leaking sensitive data
+  let sanitizedError = '';
+
+  try {
+    if (typeof errorMessage === 'object') {
+      // Extract just the error type and message, not the full stack trace
+      sanitizedError = `Error: ${errorMessage.code || 'Unknown'} - ${errorMessage.message || 'No message'}`;
+    } else {
+      // Use string representation but limit length
+      sanitizedError = String(errorMessage).substring(0, 100);
+      if (String(errorMessage).length > 100) {
+        sanitizedError += '...';
+      }
+    }
+  } catch (e) {
+    sanitizedError = 'Unable to process error details';
+  }
+
   return (
     "Hmmm...There's some issue when " +
     actionText +
     '...\n' +
-    'This is what AWS told me:\n' +
+    'Error details:\n' +
     '```' +
-    errorMessage +
-    '```'
+    sanitizedError +
+    '```\n' +
+    'Please check AWS logs for more information.'
   );
 }
