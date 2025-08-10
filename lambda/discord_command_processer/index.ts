@@ -25,13 +25,13 @@ exports.handler = async (event: any, context: Context) => {
     try {
       const result = await ec2.startInstances({ InstanceIds }).promise();
       console.log('startInstances succeed, result: \n', result);
-      await sendDeferredResponse('OK! Starting the server instance (`･ω･´)~~');
+      await sendDeferredResponse('🚀 Starting server instance...');
     } catch (err) {
       console.error(`startInstances error: \n`, err);
       await sendDeferredResponse(
         getAWSErrorMessageTemplate('starting server instance', err)
       );
-      await sendDeferredResponse('Try in another minute?');
+      await sendDeferredResponse('⏱️ Try again in a minute');
     }
   }
 
@@ -39,7 +39,7 @@ exports.handler = async (event: any, context: Context) => {
     try {
       const result = await ec2.stopInstances({ InstanceIds }).promise();
       console.log('stopInstance suceeed, result: \n', result);
-      await sendDeferredResponse('OK! Shutting down the server instance!');
+      await sendDeferredResponse('🛑 Shutting down server instance');
     } catch (err) {
       console.error(`stopInstance error: \n`, err);
       await sendDeferredResponse(
@@ -52,7 +52,7 @@ exports.handler = async (event: any, context: Context) => {
     try {
       const result = await sendCommands(['sudo systemctl restart minecloud']);
       console.log('mc_restart result: ', result);
-      await sendDeferredResponse('OK, contacting server instance!');
+      await sendDeferredResponse('🔄 Restarting server...');
     } catch (err) {
       console.error(`mc_restart error: \n`, err);
       await sendDeferredResponse(
@@ -68,7 +68,7 @@ exports.handler = async (event: any, context: Context) => {
         'sudo ./server_manual_backup.sh'
       ]);
       console.log('mc_backup result: ', result);
-      await sendDeferredResponse('OK, contacting server instance!');
+      await sendDeferredResponse('💾 Creating backup...');
     } catch (err) {
       console.error(`mc_backup error: \n`, err);
       await sendDeferredResponse(
@@ -96,10 +96,10 @@ exports.handler = async (event: any, context: Context) => {
       };
       const preSignedUrl = await s3.getSignedUrl('getObject', params);
       await sendDeferredResponse(
-        `Here's the download link for ${latestBackupKey}:\n ${preSignedUrl}`
+        `📦 Download link for ${latestBackupKey}:\n ${preSignedUrl}`
       );
     } else {
-      await sendDeferredResponse('Hmm... looks like there is no backup yet~');
+      await sendDeferredResponse('❓ No backups found');
     }
   }
 
@@ -145,7 +145,7 @@ function getAWSErrorMessageTemplate(
   try {
     if (typeof errorMessage === 'object') {
       // Extract just the error type and message, not the full stack trace
-      sanitizedError = `Error: ${errorMessage.code || 'Unknown'} - ${errorMessage.message || 'No message'}`;
+      sanitizedError = `${errorMessage.code || 'Unknown'}: ${errorMessage.message || 'No message'}`;
     } else {
       // Use string representation but limit length
       sanitizedError = String(errorMessage).substring(0, 100);
@@ -157,14 +157,5 @@ function getAWSErrorMessageTemplate(
     sanitizedError = 'Unable to process error details';
   }
 
-  return (
-    "Hmmm...There's some issue when " +
-    actionText +
-    '...\n' +
-    'Error details:\n' +
-    '```' +
-    sanitizedError +
-    '```\n' +
-    'Please check AWS logs for more information.'
-  );
+  return `❌ Error ${actionText}:\n` + '```' + sanitizedError + '```';
 }

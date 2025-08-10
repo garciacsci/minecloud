@@ -32,7 +32,7 @@ then
 
     aws route53 change-resource-record-sets --hosted-zone-id $ZONE_ID --change-batch '{"Changes":[{"Action":"UPSERT","ResourceRecordSet":{"Name":"'$DNS_NAME'","Type":"A","TTL":60,"ResourceRecords":[{"Value":"'$MY_IP'"}]}}]}'
     echo "hostname (ip): $DNS_NAME ($MY_IP)"
-    ./send_discord_message_to_webhook.sh "The server instance is ready >w< !  Here's the hostname/IP address:\n$DNS_NAME ($MY_IP)"
+    ./send_discord_message_to_webhook.sh "The server instance is ready:\n$DNS_NAME"
     echo "Discord hostname & public IP sent"
 else
     echo "ip: $MY_IP"
