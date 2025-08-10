@@ -75,14 +75,26 @@ export class DiscordInteractionsEndpointConstruct extends Construct {
     this.discordCommandProcesser.grantInvoke(this.discordInteractionsEndpoint);
     props.backUpBucket.grantReadWrite(this.discordCommandProcesser);
 
+    // Scope EC2 permissions to only the specific instance
     const ec2Policy = new PolicyStatement({
-      actions: ['ec2:*'],
-      resources: ['arn:aws:ec2:*']
+      actions: [
+        'ec2:StartInstances',
+        'ec2:StopInstances',
+        'ec2:DescribeInstances'
+      ],
+      resources: [
+        `arn:aws:ec2:${props.ec2Region}:*:instance/${props.instanceId}`
+      ]
     });
 
     const ec2SSMPolicy = new PolicyStatement({
       actions: ['ssm:SendCommand'],
-      resources: ['*']
+      resources: [
+        // Scope to just this instance
+        `arn:aws:ec2:${props.ec2Region}:*:instance/${props.instanceId}`,
+        // Allow use of AWS-RunShellScript document (required for SendCommand)
+        'arn:aws:ssm:*:*:document/AWS-RunShellScript'
+      ]
     });
 
     this.discordCommandProcesser.role?.attachInlinePolicy(
