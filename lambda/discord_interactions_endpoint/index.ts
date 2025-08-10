@@ -18,6 +18,15 @@ exports.handler = async (event: any, context: Context) => {
     Buffer.from(PUBLIC_KEY, 'hex')
   );
   if (!isVerified) {
+
+  // Log request information without sensitive data
+  console.log('Request received:', {
+    timestamp,
+    headers: Object.keys(event.headers),
+    bodyLength: eventBody ? eventBody.length : 0,
+    path: event.path,
+    httpMethod: event.httpMethod
+  });
     return {
       statusCode: 401,
       body: JSON.stringify('invalid request signature')
