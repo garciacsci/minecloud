@@ -219,6 +219,97 @@ exports.handler = async (event: any, context: Context) => {
     }
   }
 
+  if (commandName == getFullDiscordCommand('players')) {
+    try {
+      // Check instance status first
+      const instanceStatus = await ec2
+        .describeInstances({ InstanceIds })
+        .promise();
+      const instance = instanceStatus.Reservations?.[0]?.Instances?.[0];
+
+      if (!instance) {
+        await sendDeferredResponse('❓ Unable to find server instance');
+        return;
+      }
+
+      const state = instance.State?.Name;
+
+      if (state !== 'running') {
+        await sendDeferredResponse(
+          `⚠️ Server is not running (current state: ${state}). Start the server to view players.`
+        );
+        return;
+      }
+
+      try {
+        // Get detailed player list from the server using a command appropriate for your game server
+        // For Minecraft, we can use the 'list' command in the server console
+        const result = await sendCommands([
+          'cd /opt/minecloud/',
+          // Use screen to send a 'list' command to the server and capture output
+          'screen -S mc_server -X stuff "list^M"',
+          // Wait briefly for command to execute
+          'sleep 1',
+          // Use grep to extract the most recent player list from logs
+          'grep -a "\\[Server thread/INFO\\]: There are" /opt/minecloud/logs/latest.log | tail -1'
+        ]);
+
+        // Wait for command execution
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        // Get command invocation result
+        const commandId = result.Command?.CommandId;
+        const invocation = await SSM.getCommandInvocation({
+          CommandId: commandId!,
+          InstanceId: InstanceIds[0]
+        }).promise();
+
+        const output = invocation.StandardOutputContent || '';
+
+        // Parse player list from output
+        // Expected format: "[Server thread/INFO]: There are X of a max of Y players online: player1, player2, ..."
+        let playerMessage = '';
+        const playerListMatch = output.match(
+          /There are \d+ of a max of \d+ players online: (.*)/
+        );
+
+        if (
+          playerListMatch &&
+          playerListMatch[1] &&
+          playerListMatch[1].trim() !== ''
+        ) {
+          // We have players online
+          const playerList = playerListMatch[1].split(',').map((p) => p.trim());
+          playerMessage = `👥 **Online Players (${playerList.length})**\n`;
+
+          // List all players with bullet points
+          playerList.forEach((player) => {
+            playerMessage += `• ${player}\n`;
+          });
+        } else if (output.includes('There are 0')) {
+          // No players online
+          playerMessage = '👤 **No players currently online**';
+        } else {
+          // Unable to parse output
+          playerMessage =
+            '⚠️ **Unable to retrieve player list**\nServer may still be starting up or not responding to commands.';
+        }
+
+        await sendDeferredResponse(playerMessage);
+      } catch (err) {
+        console.error('Error getting player list:', err);
+        await sendDeferredResponse(
+          getAWSErrorMessageTemplate('retrieving player list', err)
+        );
+      }
+    } catch (err) {
+      console.error(`players command error: \n`, err);
+      await sendDeferredResponse(
+        getAWSErrorMessageTemplate('checking server status', err)
+      );
+    }
+  }
+
   return {
     status: 200
   };

@@ -40,6 +40,11 @@ exports.handler = async (event: CdkCustomResourceEvent, context: Context) => {
       'Check server status and player count',
       apiEndpoint
     );
+    await registerCommand(
+      getFullDiscordCommand('players'),
+      'List all online players',
+      apiEndpoint
+    );
     console.log('Discord command register completed');
   }
 
