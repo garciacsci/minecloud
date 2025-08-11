@@ -45,6 +45,11 @@ exports.handler = async (event: CdkCustomResourceEvent, context: Context) => {
       'List all online players',
       apiEndpoint
     );
+    await registerCommand(
+      getFullDiscordCommand('leaderboard'),
+      'Display player statistics and playtime leaderboard',
+      apiEndpoint
+    );
     console.log('Discord command register completed');
   }
 

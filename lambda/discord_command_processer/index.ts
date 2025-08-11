@@ -310,6 +310,262 @@ exports.handler = async (event: any, context: Context) => {
     }
   }
 
+  if (commandName == getFullDiscordCommand('leaderboard')) {
+    try {
+      // Check instance status first
+      const instanceStatus = await ec2
+        .describeInstances({ InstanceIds })
+        .promise();
+      const instance = instanceStatus.Reservations?.[0]?.Instances?.[0];
+
+      if (!instance) {
+        await sendDeferredResponse('❓ Unable to find server instance');
+        return;
+      }
+
+      const state = instance.State?.Name;
+
+      if (state !== 'running') {
+        await sendDeferredResponse(
+          `⚠️ Server is not running (current state: ${state}). Start the server to view leaderboard.`
+        );
+        return;
+      }
+
+      try {
+        // Get player stats using a combination of available data sources
+        const result = await sendCommands([
+          'cd /opt/minecloud/',
+          // Find all player data files
+          'find world/stats -name "*.json" 2>/dev/null || echo "No stats files found"',
+          // List advancements for potential achievement counting
+          'find world/advancements -name "*.json" 2>/dev/null || echo "No advancement files found"',
+          // Get server start time for uptime calculation
+          'stat -c %Y world/level.dat 2>/dev/null || echo "0"'
+        ]);
+
+        // Wait for command execution
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        // Get command invocation result
+        const commandId = result.Command?.CommandId;
+        const invocation = await SSM.getCommandInvocation({
+          CommandId: commandId!,
+          InstanceId: InstanceIds[0]
+        }).promise();
+
+        const output = invocation.StandardOutputContent || '';
+        const lines = output.trim().split('\n');
+
+        // Get all player stat files
+        const statFiles = [];
+        let i = 0;
+        while (
+          i < lines.length &&
+          lines[i] !== 'No stats files found' &&
+          !lines[i].startsWith('find:')
+        ) {
+          if (lines[i].endsWith('.json') && lines[i].includes('stats')) {
+            statFiles.push(lines[i]);
+          }
+          i++;
+        }
+
+        if (statFiles.length === 0) {
+          await sendDeferredResponse(
+            '📊 **Player Leaderboard**\nNo player statistics available yet. Players need to join the server first!'
+          );
+          return;
+        }
+
+        // Process each player's stats to extract playtime data
+        const playerStatsPromises = statFiles.map(async (statFile) => {
+          const statsResult = await sendCommands([
+            `cat ${statFile} 2>/dev/null || echo "{}"`
+          ]);
+
+          await new Promise((resolve) => setTimeout(resolve, 500));
+
+          const statsCommandId = statsResult.Command?.CommandId;
+          const statsInvocation = await SSM.getCommandInvocation({
+            CommandId: statsCommandId!,
+            InstanceId: InstanceIds[0]
+          }).promise();
+
+          const statsContent = statsInvocation.StandardOutputContent || '{}';
+          let stats;
+
+          try {
+            stats = JSON.parse(statsContent);
+          } catch (e) {
+            console.error(`Error parsing stats for ${statFile}:`, e);
+            stats = {};
+          }
+
+          // Extract player name from filename (UUID format)
+          const playerUuid =
+            statFile.split('/').pop()?.replace('.json', '') || '';
+
+          // Get player name from UUID if possible
+          const usercacheResult = await sendCommands([
+            'cat world/usernamecache.json 2>/dev/null || echo "{}"'
+          ]);
+
+          await new Promise((resolve) => setTimeout(resolve, 500));
+
+          const usercacheCommandId = usercacheResult.Command?.CommandId;
+          const usercacheInvocation = await SSM.getCommandInvocation({
+            CommandId: usercacheCommandId!,
+            InstanceId: InstanceIds[0]
+          }).promise();
+
+          let playerName = playerUuid;
+          try {
+            const usercache = JSON.parse(
+              usercacheInvocation.StandardOutputContent || '{}'
+            );
+            playerName = usercache[playerUuid] || playerName;
+          } catch (e) {
+            console.error('Error parsing usercache:', e);
+          }
+
+          // Extract playtime in ticks (1 tick = 0.05 seconds)
+          // Different Minecraft versions store playtime differently
+          let playtimeTicks = 0;
+
+          // For 1.12+
+          if (
+            stats.stats &&
+            stats.stats['minecraft:custom'] &&
+            stats.stats['minecraft:custom']['minecraft:play_time']
+          ) {
+            playtimeTicks =
+              stats.stats['minecraft:custom']['minecraft:play_time'];
+          }
+          // For 1.13+
+          else if (
+            stats.stats &&
+            stats.stats['minecraft:custom'] &&
+            stats.stats['minecraft:custom']['minecraft:play_one_minute']
+          ) {
+            playtimeTicks =
+              stats.stats['minecraft:custom']['minecraft:play_one_minute'];
+          }
+          // For older versions
+          else if (
+            stats.stat &&
+            stats.stat['minecraft:custom'] &&
+            stats.stat['minecraft:custom']['minecraft:play_one_minute']
+          ) {
+            playtimeTicks =
+              stats.stat['minecraft:custom']['minecraft:play_one_minute'];
+          }
+          // Legacy format
+          else if (stats.stat && stats.stat.playOneMinute) {
+            playtimeTicks = stats.stat.playOneMinute;
+          }
+
+          // Convert ticks to hours (20 ticks per second)
+          const playtimeHours = (playtimeTicks / (20 * 60 * 60)).toFixed(1);
+
+          // Try to get other interesting stats
+          let mobsKilled = 0;
+          let deaths = 0;
+          let blocksPlaced = 0;
+
+          // Find mob kills
+          if (
+            stats.stats &&
+            stats.stats['minecraft:custom'] &&
+            stats.stats['minecraft:custom']['minecraft:mob_kills']
+          ) {
+            mobsKilled = stats.stats['minecraft:custom']['minecraft:mob_kills'];
+          }
+
+          // Find deaths
+          if (
+            stats.stats &&
+            stats.stats['minecraft:custom'] &&
+            stats.stats['minecraft:custom']['minecraft:deaths']
+          ) {
+            deaths = stats.stats['minecraft:custom']['minecraft:deaths'];
+          }
+
+          // Count total blocks placed (simplified)
+          if (stats.stats && stats.stats['minecraft:used']) {
+            for (const [item, count] of Object.entries(
+              stats.stats['minecraft:used']
+            )) {
+              if (item.includes('block')) {
+                blocksPlaced += count as number;
+              }
+            }
+          }
+
+          return {
+            name: playerName,
+            playtimeHours: parseFloat(playtimeHours),
+            mobsKilled,
+            deaths,
+            blocksPlaced,
+            lastPlayed: stats.DataVersion
+              ? new Date().toISOString().split('T')[0]
+              : 'Unknown' // Approximate - could be improved
+          };
+        });
+
+        const playerStats = await Promise.all(playerStatsPromises);
+
+        // Sort by playtime (descending)
+        playerStats.sort((a, b) => b.playtimeHours - a.playtimeHours);
+
+        // Create the leaderboard message
+        let leaderboardMessage = '🏆 **PLAYER LEADERBOARD** 🏆\n\n';
+
+        // Playtime leaderboard
+        leaderboardMessage += '⏱️ **Playtime**\n';
+        playerStats.slice(0, 5).forEach((player, index) => {
+          leaderboardMessage += `${index + 1}. ${player.name}: ${player.playtimeHours} hours\n`;
+        });
+
+        // Optional: Add other stat categories if available
+        const haveMobKills = playerStats.some((p) => p.mobsKilled > 0);
+        if (haveMobKills) {
+          leaderboardMessage += '\n☠️ **Mob Kills**\n';
+          [...playerStats]
+            .sort((a, b) => b.mobsKilled - a.mobsKilled)
+            .slice(0, 3)
+            .forEach((player, index) => {
+              leaderboardMessage += `${index + 1}. ${player.name}: ${player.mobsKilled}\n`;
+            });
+        }
+
+        const haveDeaths = playerStats.some((p) => p.deaths > 0);
+        if (haveDeaths) {
+          leaderboardMessage += '\n💀 **Deaths**\n';
+          [...playerStats]
+            .sort((a, b) => b.deaths - a.deaths)
+            .slice(0, 3)
+            .forEach((player, index) => {
+              leaderboardMessage += `${index + 1}. ${player.name}: ${player.deaths}\n`;
+            });
+        }
+
+        await sendDeferredResponse(leaderboardMessage);
+      } catch (err) {
+        console.error('Error getting leaderboard:', err);
+        await sendDeferredResponse(
+          getAWSErrorMessageTemplate('retrieving player leaderboard', err)
+        );
+      }
+    } catch (err) {
+      console.error(`leaderboard command error: \n`, err);
+      await sendDeferredResponse(
+        getAWSErrorMessageTemplate('checking server status', err)
+      );
+    }
+  }
+
   return {
     status: 200
   };
