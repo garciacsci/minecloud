@@ -103,6 +103,122 @@ exports.handler = async (event: any, context: Context) => {
     }
   }
 
+  if (commandName == getFullDiscordCommand('status')) {
+    try {
+      // Check instance status
+      const instanceStatus = await ec2
+        .describeInstances({ InstanceIds })
+        .promise();
+      const instance = instanceStatus.Reservations?.[0]?.Instances?.[0];
+
+      if (!instance) {
+        await sendDeferredResponse('❓ Unable to find server instance');
+        return;
+      }
+
+      const state = instance.State?.Name;
+      let statusMessage = '';
+
+      if (state === 'running') {
+        try {
+          // Get connection count, uptime, and domain name from the server
+          const result = await sendCommands([
+            'cd /opt/minecloud/',
+            'echo "$(source ./get_connection_count.sh && get_current_connection_count)"',
+            'uptime -p',
+            'aws ec2 describe-tags --region $(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone | sed "s/[a-z]$//") --filters "Name=resource-id,Values=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)" --query "Tags[?Key==\'DOMAIN_NAME\'].Value" --output text'
+          ]);
+
+          // Wait for command execution
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+
+          // Get command invocation result
+          const commandId = result.Command?.CommandId;
+          const invocation = await SSM.getCommandInvocation({
+            CommandId: commandId!,
+            InstanceId: InstanceIds[0]
+          }).promise();
+
+          const output = invocation.StandardOutputContent || '';
+          const lines = output.trim().split('\n');
+
+          // Parse connection count, uptime, and domain name
+          const connectionCount = lines[0] || '0';
+          const uptime = lines[1] || 'unknown';
+          const domainName = lines[2] ? lines[2].trim() : '';
+
+          // Get address to display (DNS name if domain exists, IP otherwise)
+          let addressDisplay = '';
+          if (domainName) {
+            addressDisplay = `• Address: \`minecloud.${domainName}\``;
+          } else {
+            const publicIp =
+              instance.PublicIpAddress || 'No public IP assigned';
+            addressDisplay = `• IP: \`${publicIp}\``;
+          }
+
+          statusMessage =
+            `📊 **Server Status**\n` +
+            `• Status: 🟢 Online\n` +
+            `• Players: ${connectionCount} connected\n` +
+            `• Uptime: ${uptime}\n` +
+            addressDisplay;
+        } catch (err) {
+          console.error('Error getting server details:', err);
+
+          // Attempt to get domain name even if other details fail
+          try {
+            const domainResult = await sendCommands([
+              'aws ec2 describe-tags --region $(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone | sed "s/[a-z]$//") --filters "Name=resource-id,Values=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)" --query "Tags[?Key==\'DOMAIN_NAME\'].Value" --output text'
+            ]);
+
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+
+            const domainCmdId = domainResult.Command?.CommandId;
+            const domainInvocation = await SSM.getCommandInvocation({
+              CommandId: domainCmdId!,
+              InstanceId: InstanceIds[0]
+            }).promise();
+
+            const domainName = domainInvocation.StandardOutputContent?.trim();
+
+            if (domainName) {
+              statusMessage =
+                `📊 **Server Status**\n` +
+                `• Status: 🟡 Running but may be initializing\n` +
+                `• Address: \`minecloud.${domainName}\``;
+            } else {
+              statusMessage =
+                `📊 **Server Status**\n` +
+                `• Status: 🟡 Running but may be initializing\n` +
+                `• IP: \`${instance.PublicIpAddress || 'No public IP assigned'}\``;
+            }
+          } catch (domainErr) {
+            statusMessage =
+              `📊 **Server Status**\n` +
+              `• Status: 🟡 Running but may be initializing\n` +
+              `• IP: \`${instance.PublicIpAddress || 'No public IP assigned'}\``;
+          }
+        }
+      } else if (state === 'pending') {
+        statusMessage = '📊 **Server Status**\n• Status: 🟠 Starting up';
+      } else if (state === 'stopping' || state === 'shutting-down') {
+        statusMessage = '📊 **Server Status**\n• Status: 🟠 Shutting down';
+      } else if (state === 'stopped') {
+        statusMessage = '📊 **Server Status**\n• Status: ⚫ Offline (stopped)';
+      } else {
+        statusMessage = `📊 **Server Status**\n• Status: ⚫ ${state}`;
+      }
+
+      await sendDeferredResponse(statusMessage);
+    } catch (err) {
+      console.error(`status check error: \n`, err);
+      await sendDeferredResponse(
+        getAWSErrorMessageTemplate('checking server status', err)
+      );
+    }
+  }
+
   return {
     status: 200
   };

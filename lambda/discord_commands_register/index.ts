@@ -10,8 +10,16 @@ import { getFullDiscordCommand } from '../shared_util';
 exports.handler = async (event: CdkCustomResourceEvent, context: Context) => {
   if (event.RequestType !== 'Delete') {
     const apiEndpoint = `https://discord.com/api/v10/applications/${process.env.APP_ID}/commands`;
-    await registerCommand(getFullDiscordCommand('start'), 'Start the server', apiEndpoint);
-    await registerCommand(getFullDiscordCommand('stop'), 'Stop the server', apiEndpoint);
+    await registerCommand(
+      getFullDiscordCommand('start'),
+      'Start the server',
+      apiEndpoint
+    );
+    await registerCommand(
+      getFullDiscordCommand('stop'),
+      'Stop the server',
+      apiEndpoint
+    );
     await registerCommand(
       getFullDiscordCommand('restart'),
       'Restart the server system service',
@@ -25,6 +33,11 @@ exports.handler = async (event: CdkCustomResourceEvent, context: Context) => {
     await registerCommand(
       getFullDiscordCommand('backup_download'),
       'Get the latest backup',
+      apiEndpoint
+    );
+    await registerCommand(
+      getFullDiscordCommand('status'),
+      'Check server status and player count',
       apiEndpoint
     );
     console.log('Discord command register completed');
@@ -62,7 +75,7 @@ async function registerCommand(
     data: body
   };
 
-  console.log('register request: ', {request});
+  console.log('register request: ', { request });
   const response = await axios(request);
-  console.log('register response: ', {response});
+  console.log('register response: ', { response });
 }
