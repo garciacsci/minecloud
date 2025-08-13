@@ -336,7 +336,7 @@ exports.handler = async (event: any, context: Context) => {
       try {
         // Get player stats using a combination of available data sources
         const result = await sendCommands([
-          'cd /opt/minecloud/',
+          'cd /opt/minecloud/server',
           // Find all player data files
           'find world/stats -name "*.json" 2>/dev/null || echo "No stats files found"',
           // List advancements for potential achievement counting
