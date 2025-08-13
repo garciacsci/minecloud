@@ -77,23 +77,27 @@ export class DiscordInteractionsEndpointConstruct extends Construct {
 
     // Scope EC2 permissions to only the specific instance
     const ec2Policy = new PolicyStatement({
-      actions: [
-        'ec2:StartInstances',
-        'ec2:StopInstances',
-        'ec2:DescribeInstances'
-      ],
+      actions: ['ec2:StartInstances', 'ec2:StopInstances'],
       resources: [
         `arn:aws:ec2:${props.ec2Region}:*:instance/${props.instanceId}`
       ]
     });
 
+    // EC2 describe permissions - this doesn't support resource-level permissions
+    const ec2DescribePolicy = new PolicyStatement({
+      actions: ['ec2:DescribeInstances'],
+      resources: ['*']
+    });
+
     const ec2SSMPolicy = new PolicyStatement({
-      actions: ['ssm:SendCommand'],
+      actions: ['ssm:SendCommand', 'ssm:GetCommandInvocation'],
       resources: [
         // Scope to just this instance
         `arn:aws:ec2:${props.ec2Region}:*:instance/${props.instanceId}`,
         // Allow use of AWS-RunShellScript document (required for SendCommand)
-        'arn:aws:ssm:*:*:document/AWS-RunShellScript'
+        'arn:aws:ssm:*:*:document/AWS-RunShellScript',
+        // Allow checking command status - required for GetCommandInvocation
+        'arn:aws:ssm:*:*:*'
       ]
     });
 
@@ -102,7 +106,7 @@ export class DiscordInteractionsEndpointConstruct extends Construct {
         this,
         `${STACK_PREFIX}_discord_interactions_endpoint_lambda_policy`,
         {
-          statements: [ec2Policy, ec2SSMPolicy]
+          statements: [ec2Policy, ec2DescribePolicy, ec2SSMPolicy]
         }
       )
     );
