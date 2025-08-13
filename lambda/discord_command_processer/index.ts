@@ -248,11 +248,11 @@ exports.handler = async (event: any, context: Context) => {
         const result = await sendCommands([
           'cd /opt/minecloud/',
           // Use screen to send a 'list' command to the server and capture output
-          'screen -S mc_server -X stuff "list^M"',
+          'sudo screen -S mc_server -X stuff "list^M"',
           // Wait briefly for command to execute
           'sleep 1',
           // Use grep to extract the most recent player list from logs
-          'grep -a "\\[Server thread/INFO\\]: There are" /opt/minecloud/logs/latest.log | tail -1'
+          'sudo grep -a "\\[Server thread/INFO\\]: There are" /opt/minecloud/server/logs/latest.log | tail -1'
         ]);
 
         // Wait for command execution
