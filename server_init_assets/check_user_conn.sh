@@ -20,17 +20,17 @@ then
         if [[ $((sshCons)) = 0 ]]
         then
                 echo "no ssh connections, closing server instace"
-                ./send_discord_message_to_webhook.sh "🛑 No players online. Shutting down server..."
+                ./send_discord_message_to_webhook.sh "No players online. Shutting down server..."
 		sudo systemctl stop minecloud
                 ./auto_backup_checker.sh
-		./send_discord_message_to_webhook.sh "💤 Server stopped"
+		./send_discord_message_to_webhook.sh "Server stopped"
 		# ./send_discord_message_to_webhook.sh "Enjoying MineCloud BOT? If so, please don't hesitate to star it on GitHub and contribute to the project :) ! \n https://github.com/VeriorPies/MineCloud"
 		sudo shutdown
         else
                 echo "There are 1 or more active ssh connections, skip termination"
-		./send_discord_message_to_webhook.sh "🔌 SSH connection active ($sshCons)"
+		./send_discord_message_to_webhook.sh "SSH connection active ($sshCons)"
         fi
 else
         echo "Somebody is online, do nothing!"
-        ./send_discord_message_to_webhook.sh "👥 $mcCons player(s) online"
+        ./send_discord_message_to_webhook.sh "$mcCons player(s) online"
 fi
