@@ -2,6 +2,7 @@ import { Context } from 'aws-lambda';
 import * as AWS from 'aws-sdk';
 import axios from 'axios';
 import { getFullDiscordCommand } from '../shared_util';
+import { DOMAIN_NAME } from '../../MineCloud-Service-Info';
 
 const InstanceIds = [process.env.INSTANCE_ID!];
 const ec2_instance_region = process.env.EC2_REGION;
@@ -145,7 +146,7 @@ exports.handler = async (event: any, context: Context) => {
           // Parse connection count, uptime, and domain name
           const connectionCount = lines[0] || '0';
           const uptime = lines[1] || 'unknown';
-          const domainName = lines[2] ? lines[2].trim() : '';
+          const domainName = DOMAIN_NAME;
 
           // Get address to display (DNS name if domain exists, IP otherwise)
           let addressDisplay = '';
