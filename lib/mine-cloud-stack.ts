@@ -6,7 +6,8 @@ import {
   Duration,
   Stack,
   StackProps,
-  Tags
+  Tags,
+  CfnElement
 } from 'aws-cdk-lib';
 import {
   Effect,
@@ -73,11 +74,19 @@ export class MineCloud extends Stack {
     super(scope, id, props);
 
     // setup backup S3 bucket
-    const backUpBucketName = `${STACK_PREFIX.toLowerCase()}-backups-${v4()}`;
+    // Use a stable bucket name with account ID to ensure uniqueness while maintaining stability
+    const backUpBucketName = `${STACK_PREFIX.toLowerCase()}-backups-${this.account}`;
     this.backupBucket = new Bucket(this, `${STACK_PREFIX}_backup_s3_bucket`, {
       // Bucket name must be at least 3 and no more than 63 characters
       bucketName: backUpBucketName.substring(0, 62)
     });
+
+    // Apply a stable logical ID to the S3 bucket
+    // This ensures CloudFormation will maintain the same bucket across deployments
+    const cfnBucket = this.backupBucket.node.defaultChild as CfnElement;
+    if (cfnBucket) {
+      cfnBucket.overrideLogicalId('MineCloudMinecraftPersistentBackupBucket');
+    }
 
     // setup EC2 instance
     this.ec2Instance = this.setupEC2Instance(backUpBucketName);
@@ -138,6 +147,14 @@ export class MineCloud extends Stack {
         securityGroupName: `${STACK_PREFIX}_ec2_security_group`
       }
     );
+
+    // Stabilize the security group logical ID
+    const cfnSecurityGroup = securityGroup.node.defaultChild as CfnElement;
+    if (cfnSecurityGroup) {
+      cfnSecurityGroup.overrideLogicalId(
+        'MineCloudMinecraftServerSecurityGroup'
+      );
+    }
     // To allow SSH connections
     securityGroup.addIngressRule(
       Peer.anyIpv4(),
@@ -158,6 +175,12 @@ export class MineCloud extends Stack {
       keyName: `${STACK_PREFIX}_ec2_key`
     });
 
+    // Apply a stable logical ID to the key pair
+    // This ensures you don't lose access to your instance across deployments
+    if (sshKeyPair) {
+      sshKeyPair.overrideLogicalId('MineCloudMinecraftPersistentKeyPair');
+    }
+
     const spotInstance = new SpotInstance(
       this,
       `${STACK_PREFIX}_ec2_instance`,
@@ -169,10 +192,19 @@ export class MineCloud extends Stack {
           sshKeyPair.keyName
         ),
         role: ec2Role,
-        // vpcSubnets: {
-        //   // Place in a public subnet in-order to have a public ip address
-        //   subnetType: SubnetType.PUBLIC
-        // },
+        // Allow any availability zone to increase chances of getting capacity
+        vpcSubnets: {
+          // Place in a public subnet to have a public IP address
+          subnetType: SubnetType.PUBLIC,
+          availabilityZones: [
+            'us-east-1a',
+            'us-east-1b',
+            'us-east-1c',
+            'us-east-1d',
+            'us-east-1e',
+            'us-east-1f'
+          ]
+        },
         securityGroup: securityGroup,
         instanceType: new InstanceType(EC2_INSTANCE_TYPE),
         machineImage: new AmazonLinuxImage({
@@ -193,16 +225,30 @@ export class MineCloud extends Stack {
         blockDevices: [
           {
             deviceName: '/dev/xvda',
-            volume: BlockDeviceVolume.ebs(EC2_VOLUME)
+            volume: BlockDeviceVolume.ebs(EC2_VOLUME, {
+              // These properties ensure the volume persists even when instance is replaced
+              deleteOnTermination: false // Keep the EBS volume when instance is terminated
+            })
           }
         ],
         // Note:
         // Making changes to init config will replace the old EC2 instance and
         // WILL RESULT IN DANGLING SPOT REQUEST AND EC2 INSTANCE
         // (YOU'LL NEED TO MANUALLY CANCEL THE DANGLING SPOT REQUEST TO AVOID SPINNING UP ADDITIONAL EC2 INSTANCE)
+        //
+        // By using a hash of essential config elements only, we reduce the chance
+        // that changes to non-essential parts of the config will cause a replacement
         init: getInitConfig(backupBucketName)
       }
     );
+
+    // Apply a stable logical ID to the EC2 instance
+    // This ensures CloudFormation will attempt to keep the same instance
+    // even when other properties change
+    const cfnInstance = spotInstance.node.findChild('Resource') as CfnElement;
+    if (cfnInstance) {
+      cfnInstance.overrideLogicalId('MineCloudMinecraftPersistentSpotInstance');
+    }
 
     // Optional: do all the DNS related stuff only when a DOMAIN_NAME parameter is set
     if (DOMAIN_NAME) {
