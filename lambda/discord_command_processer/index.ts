@@ -27,6 +27,41 @@ exports.handler = async (event: any, context: Context) => {
       const result = await ec2.startInstances({ InstanceIds }).promise();
       console.log('startInstances succeed, result: \n', result);
       await sendDeferredResponse('🚀 Starting server instance...');
+
+      // Wait for the instance to start and get to running state
+      try {
+        // Wait for instance to enter 'running' state (with timeout)
+        const maxWaitTime = 60000; // 60 seconds timeout
+        const startTime = Date.now();
+        let instanceRunning = false;
+
+        while (!instanceRunning && Date.now() - startTime < maxWaitTime) {
+          const status = await ec2.describeInstances({ InstanceIds }).promise();
+          const state = status.Reservations?.[0]?.Instances?.[0]?.State?.Name;
+
+          if (state === 'running') {
+            instanceRunning = true;
+            // Send update that instance is now running
+            await sendDeferredResponse(
+              '🟢 Server instance is now running! The game server will start automatically.'
+            );
+            break;
+          }
+
+          // Wait 5 seconds before checking again
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
+
+        if (!instanceRunning) {
+          // If we timed out, let the user know the instance is still starting
+          await sendDeferredResponse(
+            '⏱️ Server instance is still starting. Use `/mc_status` to check the current status.'
+          );
+        }
+      } catch (statusErr) {
+        console.error('Error checking instance status:', statusErr);
+        // This is just an enhancement, don't break the main functionality if it fails
+      }
     } catch (err) {
       console.error(`startInstances error: \n`, err);
       await sendDeferredResponse(
@@ -393,7 +428,7 @@ exports.handler = async (event: any, context: Context) => {
             CommandId: statsCommandId!,
             InstanceId: InstanceIds[0]
           }).promise();
- 
+
           const statsContent = statsInvocation.StandardOutputContent || '{}';
           let stats;
 
