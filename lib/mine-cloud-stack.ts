@@ -49,7 +49,7 @@ import {
   DISCORD_APP_ID,
   DISCORD_BOT_TOKEN
 } from '../MineCloud-Service-Info';
-import { Bucket } from 'aws-cdk-lib/aws-s3';
+import { Bucket, IBucket } from 'aws-cdk-lib/aws-s3';
 import { getInitConfig } from './instance-init';
 import { v4 } from 'uuid';
 import { PORT_CONFIGS } from '../minecloud_configs/advanced_configs/port-configs';
@@ -68,25 +68,18 @@ export class MineCloud extends Stack {
 
   readonly discordCommandRegisterResource: CustomResource;
 
-  readonly backupBucket: Bucket;
+  readonly backupBucket: IBucket;
 
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    // setup backup S3 bucket
-    // Use a stable bucket name with account ID to ensure uniqueness while maintaining stability
+    // Import existing backup S3 bucket instead of creating a new one
     const backUpBucketName = `${STACK_PREFIX.toLowerCase()}-backups-${this.account}`;
-    this.backupBucket = new Bucket(this, `${STACK_PREFIX}_backup_s3_bucket`, {
-      // Bucket name must be at least 3 and no more than 63 characters
-      bucketName: backUpBucketName.substring(0, 62)
-    });
-
-    // Apply a stable logical ID to the S3 bucket
-    // This ensures CloudFormation will maintain the same bucket across deployments
-    const cfnBucket = this.backupBucket.node.defaultChild as CfnElement;
-    if (cfnBucket) {
-      cfnBucket.overrideLogicalId('MineCloudMinecraftPersistentBackupBucket');
-    }
+    this.backupBucket = Bucket.fromBucketName(
+      this,
+      `${STACK_PREFIX}_backup_s3_bucket`,
+      backUpBucketName.substring(0, 62)
+    );
 
     // setup EC2 instance
     this.ec2Instance = this.setupEC2Instance(backUpBucketName);
@@ -105,7 +98,7 @@ export class MineCloud extends Stack {
           ec2Region: this.region,
           discordAppId: DISCORD_APP_ID,
           discordPublicKey: DISCORD_PUBLIC_KEY,
-          backUpBucket: this.backupBucket
+          backUpBucket: this.backupBucket as Bucket
         }
       );
     this.discordInteractionsEndpointLambda.node.addDependency(this.ec2Instance);
@@ -138,59 +131,24 @@ export class MineCloud extends Stack {
       })
     );
 
-    const securityGroup = new SecurityGroup(
+    // Import existing security group instead of creating a new one
+    const securityGroup = SecurityGroup.fromLookupByName(
       this,
       `${STACK_PREFIX}_ec2_security_group`,
-      {
-        vpc: defaultVPC,
-        allowAllOutbound: true,
-        securityGroupName: `${STACK_PREFIX}_ec2_security_group`
-      }
+      `${STACK_PREFIX}_ec2_security_group`,
+      defaultVPC
     );
 
-    // Stabilize the security group logical ID
-    const cfnSecurityGroup = securityGroup.node.defaultChild as CfnElement;
-    if (cfnSecurityGroup) {
-      cfnSecurityGroup.overrideLogicalId(
-        'MineCloudMinecraftServerSecurityGroup'
-      );
-    }
-    // To allow SSH connections
-    securityGroup.addIngressRule(
-      Peer.anyIpv4(),
-      Port.tcp(22),
-      'Allows SSH connection'
-    );
-
-    for (const config of PORT_CONFIGS) {
-      securityGroup.addIngressRule(
-        config.peer,
-        config.port,
-        config.description
-      );
-    }
-
-    // Key pair for ssh-ing into EC2 instance from aws console
-    const sshKeyPair = new CfnKeyPair(this, `${STACK_PREFIX}_ec2_key_pair`, {
-      keyName: `${STACK_PREFIX}_ec2_key`
-    });
-
-    // Apply a stable logical ID to the key pair
-    // This ensures you don't lose access to your instance across deployments
-    if (sshKeyPair) {
-      sshKeyPair.overrideLogicalId('MineCloudMinecraftPersistentKeyPair');
-    }
+    // Import existing key pair instead of creating a new one
+    const keyPairName = `${STACK_PREFIX}_ec2_key`;
+    const keyPair = KeyPair.fromKeyPairName(this, 'Ec2KeyPair', keyPairName);
 
     const spotInstance = new SpotInstance(
       this,
       `${STACK_PREFIX}_ec2_instance`,
       {
         vpc: defaultVPC,
-        keyPair: KeyPair.fromKeyPairName(
-          this,
-          'Ec2KeyPair',
-          sshKeyPair.keyName
-        ),
+        keyPair: keyPair,
         role: ec2Role,
         // Allow any availability zone to increase chances of getting capacity
         vpcSubnets: {
